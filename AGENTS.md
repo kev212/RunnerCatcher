@@ -14,7 +14,7 @@ GMGN trending 1m poll (5s)
   → pre-filter (rug > 0.3? wash trading? dedup?)
   → gates (age < 5min, vol ≥ $100k, MC ≥ $100k)
   → enrich (/v1/token/info → fees ≥ 10 SOL)
-  → LLM final gate (DeepSeek)
+  → LLM final gate (DeepSeek) ← injected with learned patterns
   → Jupiter Ultra buy (if verdict BUY + confidence ≥ 75)
   → Position monitor (5s loop):
       - TP1 +100% → sell 50%
@@ -22,7 +22,14 @@ GMGN trending 1m poll (5s)
       - Trailing 30% from high
       - SL -50%
       - Max hold 60 min
+      → on close: record lesson + update pattern_stats
+          → evaluate adaptive thresholds (auto-tighten if win rate < 35%)
 ```
+
+## Learning System
+- **Level 1**: Every trade outcome recorded → patterns extracted across 8 categories (launchpad, rug_ratio, smart_degen, volume, social, MC, holders)
+- **LLM Injection**: Past win/loss patterns injected into system prompt as few-shot context
+- **Level 2 (Adaptive)**: After each close, win rate evaluated per pattern; if <35% on ≥5 trades → auto-tighten matching setting (e.g. `max_rug_ratio`), Telegram alert sent
 
 ## Structure
 - `src/index.ts` — entry, poll loop
@@ -31,6 +38,7 @@ GMGN trending 1m poll (5s)
 - `src/pipeline/` — gates, candidate builder, LLM
 - `src/executor/` — Jupiter buy/sell
 - `src/positions/` — TP/SL monitor
+- `src/learning/` — advisor (pattern stats, lessons, adaptive thresholds)
 - `src/notify/` — Telegram bot
 - `src/db/` — SQLite connection + queries
 - `src/types/` — shared types
@@ -61,3 +69,4 @@ GMGN trending 1m poll (5s)
 - `/settings <key> <value>` — update at runtime
 - `/pause` / `/resume`
 - `/mode <dry_run|confirm|live>`
+- `/learn` — learning summary (win rate, best/worst, adaptive changes)
