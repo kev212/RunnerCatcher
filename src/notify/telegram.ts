@@ -124,15 +124,24 @@ async function handleBalance() {
 
 async function handleSettings(msg: TelegramBot.Message, match: RegExpMatchArray | null) {
   if (!match || !match[1]?.trim()) {
-    const keys = [
-      'token_max_age_sec', 'min_vol_1m_usd', 'min_mcap_usd', 'min_fees_sol',
-      'max_rug_ratio', 'buy_amount_sol', 'tp1_percent', 'tp2_percent',
-      'sl_percent', 'trailing_percent', 'max_hold_minutes', 'max_open_positions',
+    const keys: [string, string][] = [
+      ['token_max_age_sec', 'token_max_age_sec'],
+      ['min_vol_5m_usd', 'min_vol_1m_usd'],
+      ['min_mcap_usd', 'min_mcap_usd'],
+      ['min_fees_sol', 'min_fees_sol'],
+      ['max_rug_ratio', 'max_rug_ratio'],
+      ['buy_amount_sol', 'buy_amount_sol'],
+      ['tp1_percent', 'tp1_percent'],
+      ['tp2_percent', 'tp2_percent'],
+      ['sl_percent', 'sl_percent'],
+      ['trailing_percent', 'trailing_percent'],
+      ['max_hold_minutes', 'max_hold_minutes'],
+      ['max_open_positions', 'max_open_positions'],
     ];
     const lines = ['⚙️ <b>Settings</b>\n'];
-    for (const key of keys) {
-      const val = setting(key);
-      lines.push(`<b>${key}</b> = ${val || '(default)'}`);
+    for (const [display, dbKey] of keys) {
+      const val = setting(dbKey);
+      lines.push(`<b>${display}</b> = ${val || '(default)'}`);
     }
     lines.push('\nUse: /settings key value to update');
     sendMessage(lines.join('\n'));
@@ -157,7 +166,7 @@ export async function notifyCandidate(c: Candidate) {
     ``,
     `Token: <b>$${c.symbol}</b> (${c.mint.slice(0, 8)}...)`,
     `Launchpad: ${c.launchpad}`,
-    `Age: ${c.ageSec}s | MC: $${fmt(c.marketCapUsd)} | Vol 1m: $${fmt(c.volume1mUsd)}`,
+    `Age: ${c.ageSec}s | MC: $${fmt(c.marketCapUsd)} | Vol 5m: $${fmt(c.volume1mUsd)}`,
     `Fees: ${c.totalFeeSol.toFixed(1)} SOL | Holders: ${c.holderCount}`,
     `Smart Degens: ${c.smartDegenCount} | Rug: ${(c.rugRatio * 100).toFixed(0)}%`,
     `Social: ${c.twitter ? '✅' : '❌'} | Web: ${c.website ? '✅' : '❌'} | TG: ${c.telegram ? '✅' : '❌'}`,

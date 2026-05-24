@@ -51,7 +51,7 @@ Return JSON only: { "verdict": "BUY" | "WATCH" | "SKIP", "confidence": 0-100, "r
 function buildUserPrompt(c: Candidate): string {
   return `Token: $${c.symbol} (${c.mint.slice(0, 8)}...)
 Launchpad: ${c.launchpad}
-Age: ${c.ageSec}s | MC: $${fmt(c.marketCapUsd)} | Vol 1m: $${fmt(c.volume1mUsd)} | Fees: ${c.totalFeeSol.toFixed(1)} SOL
+Age: ${c.ageSec}s | MC: $${fmt(c.marketCapUsd)} | Vol 5m: $${fmt(c.volume1mUsd)} | Fees: ${c.totalFeeSol.toFixed(1)} SOL
 
 Risk:
 - Rug ratio: ${c.rugRatio.toFixed(2)}

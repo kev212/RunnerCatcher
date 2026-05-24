@@ -1,7 +1,7 @@
 import { validateConfig, POLL_INTERVAL_MS, TRADING_MODE, BUY_AMOUNT_SOL } from './config.js';
 import { getDb, setting, setSetting } from './db/connection.js';
 import { insertCandidate, insertPosition, updateCandidateStatus } from './db/queries.js';
-import { fetchTrending1m } from './gmgn/trending.js';
+import { fetchTrending5m } from './gmgn/trending.js';
 import { fetchTokenInfo } from './gmgn/token.js';
 import { buildCandidate } from './pipeline/candidate.js';
 import { evaluateWithLlm } from './pipeline/llm.js';
@@ -48,8 +48,8 @@ export async function start() {
 async function pollCycle() {
   if (paused) return;
 
-  // Fetch trending 1m tokens
-  const tokens = await fetchTrending1m();
+  // Fetch trending 5m tokens
+  const tokens = await fetchTrending5m();
   if (tokens.length === 0) {
     console.log('[cycle] 0 trending tokens (maybe no pump.fun activity)');
     return;

@@ -14,11 +14,11 @@ interface GmgnTrendingResponse {
   rank?: GmgnTrendingToken[];
 }
 
-export async function fetchTrending1m(): Promise<GmgnTrendingToken[]> {
+export async function fetchTrending5m(): Promise<GmgnTrendingToken[]> {
   try {
     const data = await gmgnGet<GmgnTrendingResponse>('/v1/market/rank', {
       chain: 'sol',
-      interval: '1m',
+      interval: '5m',
       limit: '80',
       order_by: 'volume',
       direction: 'desc',
