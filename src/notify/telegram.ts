@@ -42,7 +42,7 @@ export let paused = false;
 async function handleStatus(msg: TelegramBot.Message) {
   const uptime = Math.floor((Date.now() - startTime) / 1000);
   sendMessage([
-    `🤖 <b>RunnerCatcher Status</b>`,
+    `⚡ <b>Blitz Status</b>`,
     ``,
     `Mode: <b>${TRADING_MODE}</b>`,
     `Uptime: <b>${fmtDuration(uptime)}</b>`,

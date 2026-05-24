@@ -1,4 +1,4 @@
-# RunnerCatcher
+# Blitz
 
 Solana memecoin sniper bot — detects high-volume runners within 5 minutes of launch via GMGN trending 1m, validates with LLM (DeepSeek), executes via Jupiter Ultra, and manages TP/SL positions automatically.
 

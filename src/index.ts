@@ -14,7 +14,7 @@ import {
 
 export async function start() {
   validateConfig();
-  console.log('=== RunnerCatcher v1.0 ===');
+  console.log('=== Blitz v1.0 ===');
   console.log(`Mode: ${TRADING_MODE}`);
 
   getDb();
@@ -24,7 +24,7 @@ export async function start() {
     notifySell(pos.mint, pos.symbol, reason, pnlPercent, pnlSol, signature);
   });
 
-  await sendMessage(`🤖 <b>RunnerCatcher started</b>\nMode: ${TRADING_MODE}`);
+  await sendMessage(`⚡ <b>Blitz started</b>\nMode: ${TRADING_MODE}`);
 
   // Seed default settings into DB if not set
   seedDefaults();

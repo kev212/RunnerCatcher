@@ -1,4 +1,4 @@
-# RunnerCatcher — Arch Plan
+# Blitz — Arch Plan
 
 ## Stack
 - **Runtime**: Node.js + TypeScript (tsx)

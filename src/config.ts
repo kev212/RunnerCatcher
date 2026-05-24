@@ -20,7 +20,7 @@ function bool(key: string, fallback = false): boolean {
   return v === 'true' || v === '1';
 }
 
-export const APP_NAME = 'RunnerCatcher';
+export const APP_NAME = 'Blitz';
 
 export const TELEGRAM_BOT_TOKEN = str('TELEGRAM_BOT_TOKEN');
 export const TELEGRAM_CHAT_ID = str('TELEGRAM_CHAT_ID');
