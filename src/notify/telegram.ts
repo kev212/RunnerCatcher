@@ -23,6 +23,7 @@ function registerCommands() {
   bot.onText(/\/status/, handleStatus);
   bot.onText(/\/positions/, handlePositions);
   bot.onText(/\/settings(\s+.+)?/, handleSettings);
+  bot.onText(/\/learn/, handleLearn);
   bot.onText(/\/pause/, () => { paused = true; sendMessage('⏸️ Bot paused'); });
   bot.onText(/\/resume/, () => { paused = false; sendMessage('▶️ Bot resumed'); });
   bot.onText(/\/mode (.+)/, (msg, match) => {
@@ -71,6 +72,12 @@ async function handlePositions(msg: TelegramBot.Message) {
   } catch (err) {
     sendMessage(`Error: ${(err as Error).message}`);
   }
+}
+
+async function handleLearn(msg: TelegramBot.Message) {
+  const { getLearningSummary } = await import('../learning/advisor.js');
+  const summary = getLearningSummary();
+  sendMessage(summary);
 }
 
 async function handleSettings(msg: TelegramBot.Message, match: RegExpMatchArray | null) {

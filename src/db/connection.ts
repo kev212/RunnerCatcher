@@ -94,6 +94,38 @@ function migrate() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pattern_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL,
+      value TEXT NOT NULL,
+      wins INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      total_pnl_sol REAL DEFAULT 0,
+      updated_at_ms INTEGER NOT NULL,
+      UNIQUE(category, value)
+    );
+
+    CREATE TABLE IF NOT EXISTS lessons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position_id INTEGER REFERENCES positions(id),
+      mint TEXT NOT NULL,
+      symbol TEXT,
+      llm_verdict TEXT,
+      launchpad TEXT,
+      smart_degen_count INTEGER,
+      rug_ratio REAL,
+      volume_1m_usd REAL,
+      market_cap_usd REAL,
+      holder_count INTEGER,
+      twitter TEXT,
+      creator_token_status TEXT,
+      exit_reason TEXT,
+      pnl_percent REAL,
+      pnl_sol REAL,
+      is_win INTEGER,
+      closed_at_ms INTEGER NOT NULL
+    );
   `);
 }
 

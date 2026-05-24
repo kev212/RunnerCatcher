@@ -4,13 +4,21 @@ import {
 } from '../config.js';
 import type { Candidate, LlmDecision } from '../types/index.js';
 import { setting } from '../db/connection.js';
+import { buildLearningContext } from '../learning/advisor.js';
 
 function numSetting(key: string, fallback: number): number {
   const v = setting(key);
   return v ? Number(v) : fallback;
 }
 
-const SYSTEM_PROMPT = `You are a Solana memecoin sniper evaluator. You analyze tokens that already passed volume, market cap, age, and fee criteria. Your job is the FINAL gate: decide whether to BUY, WATCH, or SKIP based on risk signals and social proof.
+function buildSystemPrompt(): string {
+  const learningBlock = buildLearningContext();
+  const learningSection = learningBlock
+    ? `\n\n── LEARNED FROM PAST TRADES ──\nUse these patterns to guide your decision:\n${learningBlock}\n` +
+      `IMPORTANT: Weight learned patterns heavily. If a pattern matches this token and has LOW WIN RATE, strongly consider SKIP.`
+    : '';
+
+  return `You are a Solana memecoin sniper evaluator. You analyze tokens that already passed volume, market cap, age, and fee criteria. Your job is the FINAL gate: decide whether to BUY, WATCH, or SKIP based on risk signals and social proof.${learningSection}
 
 Rules:
 - BUY: strong signal combination with low risk. Smart money present, safe contract, genuine social activity, creator closed or transparent.
@@ -38,6 +46,7 @@ Factors that indicate SKIP:
 - top_10_holder_rate > 0.50
 
 Return JSON only: { "verdict": "BUY" | "WATCH" | "SKIP", "confidence": 0-100, "reason": "brief reason" }`;
+}
 
 function buildUserPrompt(c: Candidate): string {
   return `Token: $${c.symbol} (${c.mint.slice(0, 8)}...)
@@ -95,7 +104,7 @@ export async function evaluateWithLlm(candidate: Candidate): Promise<LlmDecision
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: buildSystemPrompt() },
           { role: 'user', content: buildUserPrompt(candidate) },
         ],
         temperature: 0.1,

@@ -5,6 +5,8 @@ import {
 } from '../db/queries.js';
 import { POSITION_CHECK_MS, TRADING_MODE } from '../config.js';
 import { executeSell } from '../executor/buy.js';
+import { recordLesson } from '../learning/advisor.js';
+import { getDb } from '../db/connection.js';
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -44,6 +46,7 @@ async function evaluatePosition(
       const pnl = 0;
       closePosition(pos.id, 'MAX_HOLD', pos.entryPriceUsd, pos.entryMcapUsd, pnl, 0, null);
       insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'MAX_HOLD', priceUsd: pos.entryPriceUsd });
+      recordLessonFromPos(pos, 'MAX_HOLD', pnl, 0);
       onSell(pos, 'MAX_HOLD', pnl, 0, null);
     }
     return;
@@ -131,6 +134,32 @@ async function doSell(pos: Position, reason: string, pnlPercent: number, pnlSol:
     priceUsd: pos.entryPriceUsd, mcapUsd: pos.entryMcapUsd,
     sizeSol: pos.sizeSol, tokenAmount: pos.tokenAmount,
     reason, signature: result.signature,
+  });
+  recordLessonFromPos(pos, reason, pnlPercent, pnlSol);
+}
+
+function recordLessonFromPos(pos: Position, reason: string, pnlPercent: number, pnlSol: number) {
+  const db = getDb();
+  const candidate = db.prepare('SELECT * FROM candidates WHERE mint = ? ORDER BY scanned_at_ms DESC LIMIT 1').get(pos.mint) as any;
+  if (!candidate) return;
+
+  recordLesson({
+    positionId: pos.id,
+    mint: pos.mint,
+    symbol: pos.symbol,
+    llmVerdict: candidate.llm_verdict,
+    launchpad: candidate.launchpad || '',
+    smartDegenCount: candidate.smart_degen_count || 0,
+    rugRatio: candidate.rug_ratio || 0,
+    volume1mUsd: candidate.volume_1m_usd || 0,
+    marketCapUsd: candidate.market_cap_usd || 0,
+    holderCount: candidate.holder_count || 0,
+    twitter: String(candidate.raw_data ? JSON.parse(candidate.raw_data)?.twitter_username || '' : ''),
+    creatorTokenStatus: candidate.creator_token_status || '',
+    exitReason: reason,
+    pnlPercent,
+    pnlSol,
+    closedAtMs: Date.now(),
   });
 }
 
