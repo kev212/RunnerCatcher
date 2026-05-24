@@ -5,6 +5,10 @@ import type { GmgnTrendingToken } from '../types/index.js';
 interface GmgnTrendingResponse {
   code: number;
   data?: {
+    code?: number;
+    data?: {
+      rank?: GmgnTrendingToken[];
+    };
     rank?: GmgnTrendingToken[];
   };
   rank?: GmgnTrendingToken[];
@@ -20,11 +24,11 @@ export async function fetchTrending1m(): Promise<GmgnTrendingToken[]> {
       direction: 'desc',
     });
 
-    let items = data?.data?.rank || data?.rank || [];
+    let items = (data as any)?.data?.data?.rank || data?.data?.rank || data?.rank || [];
     if (!Array.isArray(items)) items = [];
 
     if (TRENDING_PLATFORMS.length > 0) {
-      items = items.filter(t => {
+      items = (items as any[]).filter((t: any) => {
         const platform = (t.launchpad_platform || '').toLowerCase();
         return TRENDING_PLATFORMS.some(p => platform.includes(p.toLowerCase()));
       });

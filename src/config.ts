@@ -83,7 +83,6 @@ export function validateConfig() {
   if (!TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is required');
   if (!TELEGRAM_CHAT_ID) throw new Error('TELEGRAM_CHAT_ID is required');
   if (!GMGN_API_KEY) throw new Error('GMGN_API_KEY is required');
-  if (!JUPITER_API_KEY) throw new Error('JUPITER_API_KEY is required');
   if (TRADING_MODE !== 'dry_run' && !SOLANA_PRIVATE_KEY) {
     throw new Error('SOLANA_PRIVATE_KEY is required for confirm/live mode');
   }

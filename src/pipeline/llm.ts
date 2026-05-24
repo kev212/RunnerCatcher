@@ -108,7 +108,7 @@ export async function evaluateWithLlm(candidate: Candidate): Promise<LlmDecision
           { role: 'user', content: buildUserPrompt(candidate) },
         ],
         temperature: 0.1,
-        max_tokens: 200,
+        max_tokens: 500,
       }),
     });
 
@@ -121,7 +121,11 @@ export async function evaluateWithLlm(candidate: Candidate): Promise<LlmDecision
     const body = await res.json() as any;
     const content = body?.choices?.[0]?.message?.content || '';
 
-    const jsonMatch = content.match(/\{[\s\S]*?\}/);
+    // Find JSON in response — handle markdown code blocks and multi-line
+    let jsonStr = content;
+    // Strip markdown code fences first
+    jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error(`[llm] no JSON in response: ${content}`);
       return null;

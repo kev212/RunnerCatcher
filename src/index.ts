@@ -10,6 +10,7 @@ import { startPositionMonitor } from './positions/manager.js';
 import {
   initTelegram, sendMessage, notifyCandidate,
   notifyBuy, notifySell, notifyError, paused,
+  requestConfirmApproval,
 } from './notify/telegram.js';
 
 export async function start() {
@@ -22,6 +23,10 @@ export async function start() {
   initTelegram();
   startPositionMonitor((pos, reason, pnlPercent, pnlSol, signature) => {
     notifySell(pos.mint, pos.symbol, reason, pnlPercent, pnlSol, signature);
+    // Update simulated dry balance on close
+    const bal = Number(setting('dry_run_balance_sol', '0'));
+    setSetting('dry_run_balance_sol', String(bal + pos.sizeSol + pnlSol));
+    console.log(`[balance] sell closed: +${(pos.sizeSol + pnlSol).toFixed(3)} SOL, balance now ${(bal + pos.sizeSol + pnlSol).toFixed(3)} SOL`);
   });
 
   await sendMessage(`⚡ <b>Blitz started</b>\nMode: ${TRADING_MODE}`);
@@ -45,7 +50,10 @@ async function pollCycle() {
 
   // Fetch trending 1m tokens
   const tokens = await fetchTrending1m();
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.log('[cycle] 0 trending tokens (maybe no pump.fun activity)');
+    return;
+  }
 
   console.log(`[cycle] ${tokens.length} trending tokens`);
 
@@ -99,9 +107,38 @@ async function pollCycle() {
 
     // Execute if BUY
     if (llmDecision?.verdict === 'BUY' && (llmDecision.confidence ?? 0) >= 75) {
+      // Dry run balance check
+      const buyAmount = Number(setting('buy_amount_sol', String(BUY_AMOUNT_SOL)));
+      if (TRADING_MODE === 'dry_run') {
+        const bal = Number(setting('dry_run_balance_sol', '0'));
+        if (bal < buyAmount) {
+          console.log(`  skip $${candidate.symbol}: dry balance ${bal.toFixed(3)} SOL < ${buyAmount} SOL`);
+          updateCandidateStatus(candidateId, 'skipped');
+          notifyError(`Insufficient dry balance: ${bal.toFixed(3)} SOL (need ${buyAmount} SOL for $${candidate.symbol})`);
+          continue;
+        }
+      }
+
+      // Confirm mode: ask user before executing
+      if (TRADING_MODE === 'confirm') {
+        const approved = await requestConfirmApproval(candidate);
+        if (!approved) {
+          console.log(`  skip $${candidate.symbol}: user rejected or timeout`);
+          updateCandidateStatus(candidateId, 'skipped');
+          continue;
+        }
+      }
+
       const buyResult = await executeBuy(candidate);
 
       if (buyResult.success) {
+        // Deduct from dry balance
+        if (TRADING_MODE === 'dry_run') {
+          const bal = Number(setting('dry_run_balance_sol', '0'));
+          setSetting('dry_run_balance_sol', String(bal - buyAmount));
+          console.log(`[balance] buy ${candidate.symbol}: -${buyAmount} SOL, balance now ${(bal - buyAmount).toFixed(3)} SOL`);
+        }
+
         notifyBuy(candidate, buyResult.signature);
 
         // Save position if successful
@@ -113,7 +150,7 @@ async function pollCycle() {
             name: candidate.name,
             entryPriceUsd: candidate.priceUsd,
             entryMcapUsd: candidate.marketCapUsd,
-            sizeSol: BUY_AMOUNT_SOL,
+            sizeSol: buyAmount,
             tokenAmount: '0',
             executionMode: TRADING_MODE,
             tp1Percent: Number(setting('tp1_percent', '100')),
@@ -164,6 +201,7 @@ function seedDefaults() {
     ['max_rug_ratio', '0.3'],
     ['max_open_positions', '3'],
     ['llm_min_confidence', '75'],
+    ['dry_run_balance_sol', '0.5'],
   ];
   for (const [key, value] of defaults) {
     if (!setting(key)) setSetting(key, value);

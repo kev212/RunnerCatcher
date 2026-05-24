@@ -5,9 +5,28 @@ import type { Candidate } from '../types/index.js';
 
 let bot: TelegramBot;
 
+// Pending approvals for confirm mode
+interface PendingApproval {
+  candidate: Candidate;
+  resolve: (approved: boolean) => void;
+  timeout: NodeJS.Timeout;
+}
+const pendingApprovals = new Map<string, PendingApproval>();
+
 export function initTelegram() {
   bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
   registerCommands();
+  registerCallbacks();
+  bot.setMyCommands([
+    { command: 'status', description: 'Bot status + uptime' },
+    { command: 'positions', description: 'Open positions + PnL' },
+    { command: 'settings', description: 'View all settings' },
+    { command: 'learn', description: 'Learning summary' },
+    { command: 'pause', description: 'Pause bot' },
+    { command: 'resume', description: 'Resume bot' },
+    { command: 'mode', description: 'Change mode: dry_run/confirm/live' },
+    { command: 'balance', description: 'Dry run balance' },
+  ]).catch(err => console.log(`[telegram] setMyCommands error: ${err.message}`));
   console.log('[telegram] bot started');
 }
 
@@ -35,6 +54,7 @@ function registerCommands() {
       sendMessage(`Invalid mode. Use: dry_run, confirm, or live`);
     }
   });
+  bot.onText(/\/balance/, handleBalance);
 }
 
 export let paused = false;
@@ -53,6 +73,7 @@ async function handleStatus(msg: TelegramBot.Message) {
 async function handlePositions(msg: TelegramBot.Message) {
   try {
     const { getOpenPositions } = await import('../db/queries.js');
+    const { fetchCurrentPrice } = await import('../positions/manager.js');
     const positions = getOpenPositions();
     if (positions.length === 0) {
       sendMessage('No open positions.');
@@ -60,11 +81,16 @@ async function handlePositions(msg: TelegramBot.Message) {
     }
     const lines = [`📊 <b>Open Positions (${positions.length})</b>\n`];
     for (const p of positions) {
-      const pnl = p.entryPriceUsd > 0 ? ((p.entryPriceUsd / p.entryPriceUsd) - 1) * 100 : 0;
+      // Fetch live price for estimated PnL
+      const livePrice = await fetchCurrentPrice(p.mint);
+      const pnl = livePrice && p.entryPriceUsd > 0
+        ? ((livePrice / p.entryPriceUsd) - 1) * 100
+        : 0;
       lines.push(
         `<b>$${p.symbol || p.mint.slice(0, 8)}</b>`,
         `  Entry: $${fmt(p.entryPriceUsd)} | Size: ${p.sizeSol} SOL`,
-        `  Status: ${p.status} | PnL: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%`,
+        `  ${pnl !== 0 ? `Est PnL: <b>${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%</b> | ` : ''}Status: ${p.status}`,
+        `  TP1: +${p.tp1Percent}% | TP2: +${p.tp2Percent}% | SL: ${p.slPercent}% | Hold: ${p.maxHoldMinutes}m`,
         '',
       );
     }
@@ -78,6 +104,22 @@ async function handleLearn(msg: TelegramBot.Message) {
   const { getLearningSummary } = await import('../learning/advisor.js');
   const summary = getLearningSummary();
   sendMessage(summary);
+}
+
+async function handleBalance() {
+  const bal = Number(setting('dry_run_balance_sol', '0'));
+  const buyAmount = Number(setting('buy_amount_sol', '0.1'));
+  const maxPos = Number(setting('max_open_positions', '3'));
+  const maxBuy = Math.floor(bal / buyAmount);
+  const lines = [
+    '💰 <b>Dry Run Balance</b>',
+    '',
+    `Balance: <b>${bal.toFixed(3)} SOL</b>`,
+    `Buy amount: ${buyAmount} SOL per position`,
+    `Can open: <b>${maxBuy > maxPos ? maxPos : maxBuy}</b> / ${maxPos} positions`,
+  ];
+  if (bal < buyAmount) lines.push('', '⚠️ <b>Insufficient balance</b> \u2014 waiting for positions to close');
+  sendMessage(lines.join('\n'));
 }
 
 async function handleSettings(msg: TelegramBot.Message, match: RegExpMatchArray | null) {
@@ -133,6 +175,79 @@ export async function notifyBuy(c: Candidate, signature?: string) {
     `Launchpad: ${c.launchpad}`,
     signature && signature !== 'dry_run' ? `Tx: <code>${signature}</code>` : 'Mode: dry_run',
   ].join('\n'));
+}
+
+/**
+ * Send approval request for confirm mode with inline keyboard
+ * Returns a promise that resolves to true (approved) or false (rejected/timeout)
+ */
+export async function requestConfirmApproval(candidate: Candidate): Promise<boolean> {
+  const id = `${candidate.mint}:${Date.now()}`;
+  return new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingApprovals.delete(id);
+      resolve(false);
+    }, 60_000);
+
+    pendingApprovals.set(id, { candidate, resolve, timeout });
+
+    bot.sendMessage(TELEGRAM_CHAT_ID,
+      `🤔 <b>Confirm BUY?</b>\n\n` +
+      `Token: <b>$${candidate.symbol}</b> (${candidate.mint.slice(0, 8)}...)\n` +
+      `MC: $${fmt(candidate.marketCapUsd)} | Vol: $${fmt(candidate.volume1mUsd)}\n` +
+      `Fees: ${candidate.totalFeeSol.toFixed(1)} SOL\n` +
+      `Confidence: ${candidate.llmConfidence}%\n` +
+      `Reason: ${candidate.llmReason || ''}\n` +
+      `\nApprove or reject within 60s`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ BUY', callback_data: `approve:${id}` },
+              { text: '❌ SKIP', callback_data: `reject:${id}` },
+            ],
+          ],
+        },
+      },
+    ).catch(() => {
+      clearTimeout(timeout);
+      pendingApprovals.delete(id);
+      resolve(false);
+    });
+  });
+}
+
+function registerCallbacks() {
+  bot.on('callback_query', async (query) => {
+    if (!query.data || !query.message) return;
+
+    const [action, id] = query.data.split(':');
+    const pending = pendingApprovals.get(id);
+    if (!pending) {
+      bot.answerCallbackQuery(query.id, { text: 'Expired or already processed' });
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    pendingApprovals.delete(id);
+
+    if (action === 'approve') {
+      bot.answerCallbackQuery(query.id, { text: '✅ BUY approved!' });
+      bot.editMessageText(
+        `✅ <b>BUY approved</b>\nToken: <b>$${pending.candidate.symbol}</b>`,
+        { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'HTML' },
+      ).catch(() => {});
+      pending.resolve(true);
+    } else {
+      bot.answerCallbackQuery(query.id, { text: '❌ Skipped' });
+      bot.editMessageText(
+        `❌ <b>BUY rejected</b>\nToken: <b>$${pending.candidate.symbol}</b>`,
+        { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: 'HTML' },
+      ).catch(() => {});
+      pending.resolve(false);
+    }
+  });
 }
 
 export async function notifySell(mint: string, symbol: string, reason: string, pnlPercent: number, pnlSol: number, signature?: string | null) {

@@ -124,6 +124,10 @@ export function markTp1Done(id: number) {
   getDb().prepare('UPDATE positions SET tp1_done = 1 WHERE id = ?').run(id);
 }
 
+export function markTp2Done(id: number) {
+  getDb().prepare('UPDATE positions SET tp2_done = 1 WHERE id = ?').run(id);
+}
+
 export function insertTrade(t: {
   positionId: number; mint: string; side: string; atMs: number;
   priceUsd?: number; mcapUsd?: number; sizeSol?: number;

@@ -2,6 +2,13 @@ import { GMGN_API_KEY, GMGN_REQUEST_DELAY_MS, JSON_HEADERS, GMGN_BASE } from '..
 
 let lastRequestAt = 0;
 
+function uuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 export class GmgnError extends Error {
   constructor(
     message: string,
@@ -28,6 +35,8 @@ export async function gmgnGet<T = unknown>(pathname: string, params: Record<stri
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) url.searchParams.set(k, v);
   }
+  url.searchParams.set('timestamp', String(Math.floor(Date.now() / 1000)));
+  url.searchParams.set('client_id', uuid());
 
   const res = await fetch(url.toString(), {
     method: 'GET',
@@ -55,6 +64,8 @@ export async function gmgnPost<T = unknown>(pathname: string, body: Record<strin
   await paceRequest();
 
   const url = new URL(pathname, GMGN_BASE);
+  url.searchParams.set('timestamp', String(Math.floor(Date.now() / 1000)));
+  url.searchParams.set('client_id', uuid());
 
   const res = await fetch(url.toString(), {
     method: 'POST',

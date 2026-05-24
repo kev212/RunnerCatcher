@@ -1,7 +1,7 @@
 import type { Position } from '../types/index.js';
 import {
   getOpenPositions, updatePositionHighWater, closePosition,
-  insertTrade, markTp1Done,
+  insertTrade, markTp1Done, markTp2Done,
 } from '../db/queries.js';
 import { POSITION_CHECK_MS, TRADING_MODE } from '../config.js';
 import { executeSell } from '../executor/buy.js';
@@ -40,14 +40,82 @@ async function evaluatePosition(
   onSell: (pos: Position, reason: string, pnlPercent: number, pnlSol: number, signature: string | null) => void,
 ) {
   if (TRADING_MODE === 'dry_run') {
-    const now = Date.now();
-    const maxHoldMs = pos.maxHoldMinutes * 60 * 1000;
-    if (now - pos.openedAtMs >= maxHoldMs) {
-      const pnl = 0;
-      closePosition(pos.id, 'MAX_HOLD', pos.entryPriceUsd, pos.entryMcapUsd, pnl, 0, null);
-      insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'MAX_HOLD', priceUsd: pos.entryPriceUsd });
-      recordLessonFromPos(pos, 'MAX_HOLD', pnl, 0);
-      onSell(pos, 'MAX_HOLD', pnl, 0, null);
+    // Dry run: still track price for PnL estimation, but skip real execution
+    try {
+      const price = await fetchCurrentPrice(pos.mint);
+      if (!price) {
+        // No price data — just check max hold
+        const now = Date.now();
+        const maxHoldMs = pos.maxHoldMinutes * 60 * 1000;
+        if (now - pos.openedAtMs >= maxHoldMs) {
+          const pnl = 0;
+          closePosition(pos.id, 'MAX_HOLD', pos.entryPriceUsd, pos.entryMcapUsd, pnl, 0, null);
+          insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'MAX_HOLD', priceUsd: pos.entryPriceUsd });
+          recordLessonFromPos(pos, 'MAX_HOLD', pnl, 0);
+          onSell(pos, 'MAX_HOLD', pnl, 0, null);
+        }
+        return;
+      }
+
+      const currentMcap = pos.entryMcapUsd > 0
+        ? (price / pos.entryPriceUsd) * pos.entryMcapUsd
+        : pos.entryMcapUsd;
+      const pnlPercent = pos.entryPriceUsd > 0
+        ? ((price / pos.entryPriceUsd) - 1) * 100
+        : 0;
+      const pnlSol = (pnlPercent / 100) * pos.sizeSol;
+      const highWaterPrice = Math.max(pos.highWaterPrice || 0, price);
+      const highWaterMcap = Math.max(pos.highWaterMcap || 0, currentMcap);
+      const maxHoldMs = pos.maxHoldMinutes * 60 * 1000;
+      const now = Date.now();
+
+      // TP2
+      if (pos.tp1Done && pnlPercent >= pos.tp2Percent && !pos.tp2Done) {
+        closePosition(pos.id, 'TP2', price, currentMcap, pnlPercent, pnlSol, null);
+        insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'TP2', priceUsd: price });
+        markTp2Done(pos.id);
+        recordLessonFromPos(pos, 'TP2', pnlPercent, pnlSol);
+        onSell(pos, 'TP2', pnlPercent, pnlSol, null);
+        return;
+      }
+      // TP1
+      if (!pos.tp1Done && pnlPercent >= pos.tp1Percent) {
+        insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'TP1_PARTIAL', priceUsd: price });
+        markTp1Done(pos.id);
+        console.log(`[dry] TP1 hit: $${pos.symbol} +${pnlPercent.toFixed(1)}%`);
+      }
+      // Trailing
+      const trailingArmed = pos.tp1Done ? 1 : 0;
+      if (trailingArmed && highWaterPrice > 0) {
+        const trailDrop = (price / highWaterPrice - 1) * 100;
+        if (trailDrop <= -Math.abs(pos.trailingPercent)) {
+          closePosition(pos.id, 'TRAILING_TP', price, currentMcap, pnlPercent, pnlSol, null);
+          insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'TRAILING_TP', priceUsd: price });
+          recordLessonFromPos(pos, 'TRAILING_TP', pnlPercent, pnlSol);
+          onSell(pos, 'TRAILING_TP', pnlPercent, pnlSol, null);
+          return;
+        }
+      }
+      // SL
+      if (pnlPercent <= pos.slPercent) {
+        closePosition(pos.id, 'SL', price, currentMcap, pnlPercent, pnlSol, null);
+        insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'SL', priceUsd: price });
+        recordLessonFromPos(pos, 'SL', pnlPercent, pnlSol);
+        onSell(pos, 'SL', pnlPercent, pnlSol, null);
+        return;
+      }
+      // Max hold
+      if (now - pos.openedAtMs >= maxHoldMs) {
+        closePosition(pos.id, 'MAX_HOLD', price, currentMcap, pnlPercent, pnlSol, null);
+        insertTrade({ positionId: pos.id, mint: pos.mint, side: 'sell', atMs: now, reason: 'MAX_HOLD', priceUsd: price });
+        recordLessonFromPos(pos, 'MAX_HOLD', pnlPercent, pnlSol);
+        onSell(pos, 'MAX_HOLD', pnlPercent, pnlSol, null);
+        return;
+      }
+      // Update high water
+      updatePositionHighWater(pos.id, highWaterPrice, highWaterMcap, trailingArmed);
+    } catch (err) {
+      console.error(`[dry-pos] eval ${pos.id}: ${(err as Error).message}`);
     }
     return;
   }
@@ -78,7 +146,7 @@ async function evaluatePosition(
     // TP2: +150% (2.5x) → sell remaining 50%
     if (pos.tp1Done && pnlPercent >= tp2Pct && !pos.tp2Done) {
       await doSell(pos, 'TP2', pnlPercent, pnlSol);
-      markTp1Done(pos.id);
+      markTp2Done(pos.id);
       return;
     }
 
@@ -163,7 +231,7 @@ function recordLessonFromPos(pos: Position, reason: string, pnlPercent: number, 
   });
 }
 
-async function fetchCurrentPrice(mint: string): Promise<number | null> {
+export async function fetchCurrentPrice(mint: string): Promise<number | null> {
   try {
     const res = await fetch(`https://lite-api.jup.ag/price/v3?ids=${mint}`, {
       signal: AbortSignal.timeout(5000),

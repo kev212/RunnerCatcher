@@ -95,7 +95,7 @@ async function getJupiterOrder(outputMint: string, amountLamports: number): Prom
 
   const res = await axios.get(url.toString(), {
     timeout: 15_000,
-    headers: { ...JSON_HEADERS, 'x-api-key': JUPITER_API_KEY },
+    headers: { ...JSON_HEADERS, ...(JUPITER_API_KEY ? { 'x-api-key': JUPITER_API_KEY } : {}) },
   });
 
   const order = res.data as JupiterOrderResult;
@@ -121,7 +121,7 @@ async function executeJupiterSigned(order: JupiterOrderResult, signedTx: string)
     { signedTransaction: signedTx, requestId: order.requestId },
     {
       timeout: 30_000,
-      headers: { ...JSON_HEADERS, 'content-type': 'application/json', 'x-api-key': JUPITER_API_KEY },
+      headers: { ...JSON_HEADERS, 'content-type': 'application/json', ...(JUPITER_API_KEY ? { 'x-api-key': JUPITER_API_KEY } : {}) },
     },
   );
 
@@ -152,7 +152,7 @@ export async function executeSell(
 
     const res = await axios.get(url.toString(), {
       timeout: 15_000,
-      headers: { ...JSON_HEADERS, 'x-api-key': JUPITER_API_KEY },
+      headers: { ...JSON_HEADERS, ...(JUPITER_API_KEY ? { 'x-api-key': JUPITER_API_KEY } : {}) },
     });
 
     const order = res.data as JupiterOrderResult;
@@ -167,7 +167,7 @@ export async function executeSell(
       { signedTransaction: signedTx, requestId: order.requestId },
       {
         timeout: 30_000,
-        headers: { ...JSON_HEADERS, 'content-type': 'application/json', 'x-api-key': JUPITER_API_KEY },
+        headers: { ...JSON_HEADERS, 'content-type': 'application/json', ...(JUPITER_API_KEY ? { 'x-api-key': JUPITER_API_KEY } : {}) },
       },
     );
 
